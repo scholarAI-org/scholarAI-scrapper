@@ -1,40 +1,66 @@
-import json
 from datetime import datetime
+
+from scrapy.exceptions import DropItem
 
 from scholarships.utils_ministry import is_deadline_still_valid
 
 
 class MinistryPipeline:
     """
-    Collects all scraped Ministry items, filters out expired scholarships,
-    and saves the result to a JSON file. Extension notices are kept as
-    independent records (not automatically linked to their original
-    scholarship) — the admin reviews and matches them manually.
+    Filters Ministry scholarships before they reach the PostgreSQL pipeline.
+
+    Expired scholarships are dropped and will not be stored in the database.
+    Extension notices are also handled separately.
     """
 
-    def open_spider(self, spider):
-        self.items = []
-
     def process_item(self, item, spider):
+
+        # This pipeline is only responsible for Ministry items.
         if item.get("source") != "ministry":
             return item
 
-        self.items.append(dict(item))
+        # Extension notices are not normal scholarship records.
+        if item.get("is_extension"):
+            spider.logger.info(
+                f"Extension notice skipped: {item.get('title')}"
+            )
+            raise DropItem("Ministry extension notice")
+
+        # Get the deadline.
+        deadline_str = item.get("deadline")
+
+        if deadline_str:
+            try:
+                deadline_date = datetime.strptime(
+                    deadline_str,
+                    "%Y-%m-%d"
+                ).date()
+
+            except ValueError:
+                spider.logger.warning(
+                    f" Invalid deadline for {item.get('source_id')}: "
+                    f"{deadline_str}"
+                )
+                raise DropItem("Invalid deadline")
+
+        else:
+            deadline_date = None
+
+        # Check whether the scholarship is still active.
+        if not is_deadline_still_valid(deadline_date):
+
+            spider.logger.info(
+                f"Expired scholarship skipped: "
+                f"{item.get('title')} "
+                f"(deadline: {deadline_str})"
+            )
+
+            raise DropItem("Expired scholarship")
+
+        # If we reach here, the scholarship is valid.
+        spider.logger.info(
+            f"Active Ministry scholarship: "
+            f"{item.get('source_id')}"
+        )
+
         return item
-
-    def close_spider(self, spider):
-        final_valid = []
-
-        for record in self.items:
-            deadline_str = record.get("deadline")
-            deadline_date = datetime.strptime(deadline_str, "%Y-%m-%d") if deadline_str else None
-
-            if not is_deadline_still_valid(deadline_date):
-                continue
-
-            final_valid.append(record)
-
-        with open("ministry_output.json", "w", encoding="utf-8") as f:
-            json.dump(final_valid, f, ensure_ascii=False, indent=2)
-
-        spider.logger.info(f" Saved {len(final_valid)} active records to ministry_output.json")

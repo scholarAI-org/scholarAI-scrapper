@@ -2,8 +2,8 @@ name: Daily Scholarship Scrape
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # كل يوم الساعة 6:00 صباحًا UTC
-  workflow_dispatch:        # يسمح بتشغيل يدوي من واجهة GitHub كمان
+    - cron: "0 6 * * *"
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -24,9 +24,11 @@ jobs:
       - name: Run for9a spider
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: scrapy crawl for9a -o for9a_output.json
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: scrapy crawl for9a
 
       - name: Run ministry spider
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: scrapy crawl ministry

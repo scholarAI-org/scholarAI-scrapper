@@ -60,6 +60,7 @@ DOWNLOAD_DELAY = 1
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
     "scholarships.pipelines.MinistryPipeline": 300,
+    "scholarships.postgres_pipeline.PostgreSQLPipeline": 400,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)

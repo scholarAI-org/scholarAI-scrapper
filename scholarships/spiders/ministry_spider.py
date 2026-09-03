@@ -14,6 +14,7 @@ from scholarships.utils_ministry import (
     extract_deadline_from_text,
     is_extension_post,
 )
+from scholarships.utils_html import sanitize_html
 
 load_dotenv()
 
@@ -223,12 +224,13 @@ class MinistrySpider(scrapy.Spider):
         """Uploads all collected PDFs and asks Gemini to extract structured data for each."""
         if self.gemini_requests_made >= self.max_gemini_requests_per_run:
             self.logger.warning(
-                f"🛑 Reached the per-run Gemini limit "
+                f" Reached the per-run Gemini limit "
                 f"({self.max_gemini_requests_per_run} requests) - stopping to avoid "
                 f"exhausting today's quota. Remaining posts will be picked up on the next run."
             )
             raise scrapy.exceptions.CloseSpider("gemini_quota_reached")
-
+        self.logger.info(f" Gemini request #{self.gemini_requests_made + 1} for post: {meta['post_url']}")
+       
         temp_files = []
         for i, group in enumerate(meta["groups"]):
             temp_filename = f"/tmp/{meta['post_url'].rstrip('/').split('/')[-2]}-{i + 1}.pdf"
@@ -246,7 +248,7 @@ class MinistrySpider(scrapy.Spider):
             self.gemini_requests_made += 1
             return json.loads(gemini_response.text)
         except Exception as e:
-            self.logger.warning(f"⚠️ Gemini processing failed for {meta['post_url']}: {e}")
+            self.logger.warning(f"Gemini processing failed for {meta['post_url']}: {e}")
             return None
 
     def _build_items(self, meta, results):
@@ -262,7 +264,7 @@ class MinistrySpider(scrapy.Spider):
             post_id = meta["post_url"].rstrip("/").split("/")[-2]
             source_id = f"{post_id}-{i}" if has_multiple else post_id
 
-            self.logger.info(f"✅ Scholarship: {data.get('title', record_title)}")
+            self.logger.info(f"Scholarship: {data.get('title', record_title)}")
 
             item = ScholarshipItem()
 
@@ -277,9 +279,9 @@ class MinistrySpider(scrapy.Spider):
             item["deadline"] = data.get("deadline")
             item["no_deadline"] = False
             item["image_url"] = None
-            item["description_html"] = data.get("description")
-            item["benefits_html"] = data.get("benefits")
-            item["qualifications_html"] = data.get("requirements")
+            item["description_html"] = sanitize_html(data.get("description"))
+            item["benefits_html"] = sanitize_html(data.get("benefits"))
+            item["qualifications_html"] = sanitize_html(data.get("requirements"))
             item["apply_link"] = group["application_link"]
             item["apply_email"] = None
             item["apply_phone"] = None

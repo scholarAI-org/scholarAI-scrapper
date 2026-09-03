@@ -60,7 +60,7 @@ def is_deadline_still_valid(deadline_date):
     """Returns True if the deadline hasn't passed yet, or is unknown (None)."""
     if deadline_date is None:
         return True
-    return deadline_date >= datetime.now()
+    return deadline_date >= datetime.now().date()
 
 
 def is_extension_post(title):

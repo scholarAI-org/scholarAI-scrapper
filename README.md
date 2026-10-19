@@ -1075,3 +1075,78 @@ The current system:
 * Runs automatically every 24 hours through GitHub Actions.
 * Keeps API keys and database credentials in environment variables/GitHub Secrets.
 * Detects complete database-write failures so the scheduled GitHub workflow can report a failed run.
+
+## Description extraction service
+
+`scholarships.extraction_service.extract_scholarship_details` asynchronously returns
+`ScholarshipExtraction` with `study_level`, `majors`, `required_documents`,
+`eligibility`, `language_requirements`, and `funding_type`. Documents and language
+requirements are nested objects; eligibility contains nationality/residency, GPA,
+age, degrees, experience, nullable requirement flags, and fallback `raw_criteria`.
+Study levels, majors, and funding remain lists of normalized strings.
+Age inclusivity flags distinguish “under 30” from “30 or younger”.
+This replaces the previous flat eligibility list and document/language strings;
+external consumers must adopt the nested output. No stored database columns use
+this extraction schema.
+The existing database schema and crawling pipelines are unchanged; call this
+service with the description text wherever enrichment is needed.
+
+Configure `.env` (never commit real credentials):
+
+```dotenv
+GEMINI_MODEL=your-available-gemini-model
+GEMINI_API_KEY_1=your-authorized-project-key
+# Optional independent authorized failover projects:
+GEMINI_API_KEY_2=
+GEMINI_API_KEY_3=
+```
+
+The existing `GEMINI_API_KEY` variable is also supported. Duplicate keys are
+ignored. Choose a model supporting structured JSON output in your projects.
+
+```python
+from scholarships.extraction_service import extract_scholarship_details
+
+result = await extract_scholarship_details(description)
+print(result.model_dump())
+```
+
+Run `python3 gemini_test.py` for interactive extraction. No requests happen on
+import. Blank descriptions return empty lists and an empty eligibility object without calling Gemini.
+Malformed, blocked, or empty model responses raise `InvalidExtractionResponse`;
+provider failures raise `GeminiError` or `AllProvidersUnavailable`, rather than
+being disguised as successful empty extractions.
+
+The shared manager retains cooldowns across service calls. It uses 30-second
+per-attempt timeouts and two exponential-backoff retries for 500/503 or transport
+failures before trying the next authorized project. 401/403 and invalid API keys
+are disabled for the manager lifetime. A 429 honors Retry-After/RetryInfo (60-second
+fallback), cools down that project, and fails that request without immediate key
+rotation. Subsequent calls skip unavailable projects. Configure only authorized
+projects; additional keys must not be used to bypass provider quotas. Calls through
+one manager are serialized; cooldowns are in-memory, not shared across processes.
+
+Extraction instructions require explicit evidence and preserve scores and
+conditions. Schema validation enforces structure and enum values but cannot prove
+that model-produced statements are factually supported; retain the existing admin
+review workflow. Offline tests mock Gemini and verify the service contract and
+failure handling, not live-model semantic accuracy:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+### Try extraction on database descriptions
+
+```bash
+python3 -m scholarships.extraction_batch --limit 3
+```
+
+Uses the existing `DATABASE_URL` and Gemini environment configuration. Reads the
+newest three nonempty `scholarships.description_html` values in a read-only
+transaction, converts HTML to text, and calls the existing extraction service.
+`--limit` accepts 1–10 (default 3). Results include source identifiers, title,
+status, and nested extraction in `scholarship_extraction_sample.json` (ignored by
+Git). Use `--output path.json` to choose another local output file. No database
+rows or columns are changed. Provider failures stop the sample and preserve prior
+results; malformed responses are recorded per record. Any failure exits nonzero.

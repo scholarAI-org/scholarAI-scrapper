@@ -25,6 +25,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+output/
+.claude/
+.vscode/
 
 # PyInstaller
 #   Usually these files are written by a python script from a template
@@ -216,3 +219,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS / local
+.DS_Store
+.env.*
+!env.example

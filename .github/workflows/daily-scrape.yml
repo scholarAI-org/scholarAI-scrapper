@@ -1,34 +1,100 @@
-name: Daily Scholarship Scrape
+name: Daily scholarship scrape
 
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "0 5 * * *"      # 05:00 UTC every day (08:00 Gaza time)
   workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max items per source (empty = default)"
+        required: false
+      dry_run:
+        description: "Dry run: read everything, write nothing to the database"
+        type: boolean
+        default: false
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  scrape:
+  test:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/postgres
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+  scrape:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DB_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      LLM_PROVIDERS: groq,gemini
+      LIMIT: ${{ inputs.limit }}          # an env var, never pasted into the shell
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Run for9a spider
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: scrapy crawl for9a
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
 
-      - name: Run ministry spider
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: scrapy crawl ministry
+      - run: pip install -r requirements.txt
+
+      # The runner is wiped after every run; keep the LLM cache so unchanged
+      # items do not spend API quota again.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            output/llm_cache.json
+            output/llm_cache_telegram.json
+          key: llm-cache-${{ github.run_id }}
+          restore-keys: llm-cache-
+
+      - name: for9a
+        run: scrapy crawl for9a ${LIMIT:+-a limit="$LIMIT"}
+
+      - name: telegram
+        if: always()
+        run: scrapy crawl telegram -a limit="${LIMIT:-30}"
+
+      - name: Check the run (empty output, LLM failures, database errors)
+        if: always()
+        run: python tools/check_output.py output/for9a.json output/telegram.json --allow-empty output/telegram.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scrape-output
+          path: |
+            output/for9a.json
+            output/telegram.json
+            output/db_report_*.json
+          retention-days: 14

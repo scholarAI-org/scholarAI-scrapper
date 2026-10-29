@@ -137,7 +137,9 @@ output/                  generated files (git-ignored)
 
 ## Automation
 
-`.github/workflows/daily-scrape.yml` runs every day at 05:00 UTC, and on demand from the Actions tab (with optional `limit` and `dry_run`). It runs the tests, both spiders, and `tools/check_output.py`, which fails the run if the output is empty, most LLM calls failed, or database writes failed. Output and database reports are kept as a workflow artifact for 14 days.
+`.github/workflows/daily-scrape.yml` runs every day at 05:00 UTC, and on demand from the Actions tab (with optional `limit` and `dry_run`). It runs the tests first, then one job per source; each job runs its spider and `tools/check_output.py`, which fails the run if the output is empty, most LLM calls failed, or database writes failed. Output and database reports are kept as workflow artifacts for 14 days.
+
+The two sources run as separate jobs (`scrape-for9a`, `scrape-telegram`), so one failing source does not hide the other.
 
 Repository secrets (Settings -> Secrets and variables -> Actions): `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KEY_2`, `GEMINI_API_KEY`, `GEMINI_API_KEY_2`. Unset ones are ignored. GitHub pauses scheduled workflows in a public repository after 60 days without activity; re-enable them from the Actions tab.
 

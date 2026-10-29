@@ -45,7 +45,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
 
-  scrape:
+  scrape-telegram:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -68,33 +68,71 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # The runner is wiped after every run; keep the LLM cache so unchanged
-      # items do not spend API quota again.
+      # Keep the LLM cache so unchanged items do not spend API quota again.
       - uses: actions/cache@v4
         with:
-          path: |
-            output/llm_cache.json
-            output/llm_cache_telegram.json
-          key: llm-cache-${{ github.run_id }}
-          restore-keys: llm-cache-
-
-      - name: for9a
-        run: scrapy crawl for9a ${LIMIT:+-a limit="$LIMIT"}
+          path: output/llm_cache_telegram.json
+          key: llm-cache-telegram-${{ github.run_id }}
+          restore-keys: llm-cache-telegram-
 
       - name: telegram
-        if: always()
         run: scrapy crawl telegram -a limit="${LIMIT:-30}"
 
       - name: Check the run (empty output, LLM failures, database errors)
         if: always()
-        run: python tools/check_output.py output/for9a.json output/telegram.json --allow-empty output/telegram.json
+        run: python tools/check_output.py output/telegram.json --allow-empty output/telegram.json
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: scrape-output
+          name: telegram-output
+          path: |
+            output/telegram.json
+            output/db_report_telegram.json
+          retention-days: 14
+
+  scrape-for9a:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DB_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      LLM_PROVIDERS: groq,gemini
+      LIMIT: ${{ inputs.limit }}          # an env var, never pasted into the shell
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Keep the LLM cache so unchanged items do not spend API quota again.
+      - uses: actions/cache@v4
+        with:
+          path: output/llm_cache.json
+          key: llm-cache-for9a-${{ github.run_id }}
+          restore-keys: llm-cache-for9a-
+
+      - name: for9a
+        run: scrapy crawl for9a ${LIMIT:+-a limit="$LIMIT"}
+
+      - name: Check the run (empty output, LLM failures, database errors)
+        if: always()
+        run: python tools/check_output.py output/for9a.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: for9a-output
           path: |
             output/for9a.json
-            output/telegram.json
-            output/db_report_*.json
+            output/db_report_for9a.json
           retention-days: 14

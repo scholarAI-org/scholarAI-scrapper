@@ -14,7 +14,8 @@ AUTOTHROTTLE_MAX_DELAY = 30
 RETRY_TIMES = 2
 DOWNLOAD_TIMEOUT = 30
 
-USER_AGENT = "Mozilla/5.0 (compatible; ScholarAI-Scraper/1.0)"
+# No USER_AGENT here: Scrapy's honest default is used (for9a rejects a "Mozilla/5.0 (compatible; ...)"
+# look-alike from cloud IPs). The Telegram spider sets its own in custom_settings.
 
 # Pipelines are set per spider (custom_settings). The database writer will be
 # added here once the backend schema is final.

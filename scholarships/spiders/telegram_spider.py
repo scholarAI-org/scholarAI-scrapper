@@ -26,6 +26,7 @@ class TelegramSpider(scrapy.Spider):
     name = "telegram"
 
     custom_settings = {
+        "USER_AGENT": "Mozilla/5.0 (compatible; ScholarAI-Scraper/1.0)",
         "ITEM_PIPELINES": {
             "scholarships.db_pipeline.SkipUnchangedPipeline": 100,
             "scholarships.telegram_pipeline.BrowserFallbackPipeline": 250,

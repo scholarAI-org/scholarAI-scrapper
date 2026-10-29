@@ -1,6 +1,6 @@
-scrapy
-google-genai
-python-dotenv
-psycopg2-binary
-nh3 
-beautifulsoup4
+scrapy>=2.19,<3
+python-dotenv>=1,<2
+beautifulsoup4>=4.12,<5
+pydantic>=2,<3
+psycopg2-binary>=2.9,<3
+# Optional (browser fallback only): pip install playwright

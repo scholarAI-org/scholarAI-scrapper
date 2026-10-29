@@ -109,6 +109,7 @@ class For9aSpider(scrapy.Spider):
             yield scrapy.Request(
                 url=summary["url"],
                 callback=self.parse_ar,
+                errback=self.page_failed,
                 cb_kwargs={"summary": summary},
             )
 
@@ -143,6 +144,20 @@ class For9aSpider(scrapy.Spider):
             errback=self.en_failed,
             cb_kwargs={"summary": summary, "ar": ar},
         )
+
+    def page_failed(self, failure):
+        """A page request failed. For HTTP errors, log what the site itself says (headers and the
+        start of the body) so a block can be told apart from a bug."""
+        response = getattr(failure.value, "response", None)
+        if response is None:
+            self.logger.warning(f"Page request failed: {failure.request.url}: {failure.value!r}")
+            return
+        keep = ("server", "cf-ray", "cf-mitigated", "retry-after", "content-type")
+        headers = {k: response.headers.get(k, b"").decode("latin-1") for k in keep
+                   if response.headers.get(k)}
+        body = " ".join(response.text[:300].split())
+        self.logger.warning(
+            f"HTTP {response.status} for {failure.request.url} headers={headers} body={body!r}")
 
     def parse_en(self, response, summary, ar):
         try:
